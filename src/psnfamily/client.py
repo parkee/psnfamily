@@ -366,6 +366,41 @@ class OhanaClient:
         )
         return _get(data, "updateParentalControls", "id") is not None
 
+    # All fields accepted by the bulk op (a full ParentalControls preset).
+    _BULK_PARENTAL_CONTROL_FIELDS = frozenset({
+        "ageLevel", "bluerayAgeContent", "contentControl", "discContentCountry",
+        "dvdContent", "freeCommunication", "gameContent", "internetBrowser",
+        "spendingLimit", "vrApp",
+    })
+
+    async def set_bulk_parental_controls(
+        self, account_id: str, controls: dict[str, object]
+    ) -> bool:
+        """Apply several parental-control fields to a child in one request.
+
+        ``controls`` maps field name -> value; valid fields are
+        :data:`_BULK_PARENTAL_CONTROL_FIELDS` (``ageLevel``, ``bluerayAgeContent``,
+        ``contentControl``, ``discContentCountry``, ``dvdContent``,
+        ``freeCommunication``, ``gameContent``, ``internetBrowser``,
+        ``spendingLimit``, ``vrApp``). Values are strings: most are numeric codes
+        (e.g. ``"0"``/``"1"`` or a level), except ``discContentCountry`` which is
+        an ISO country code (e.g. ``"US"``). This is the only path that can write
+        ``bluerayAgeContent`` / ``discContentCountry`` / ``dvdContent`` (their
+        per-field ops are not yet allow-listed; see ``hashes.py``). Returns
+        ``True`` on success.
+        """
+        unknown = set(controls) - self._BULK_PARENTAL_CONTROL_FIELDS
+        if unknown:
+            raise ValueError(
+                f"unknown parental-control field(s) {sorted(unknown)}; expected "
+                f"a subset of {sorted(self._BULK_PARENTAL_CONTROL_FIELDS)}"
+            )
+        data = await self.execute(
+            "ohanaUpdateBulkParentalControls",
+            {"accountId": account_id, "parentalControls": dict(controls)},
+        )
+        return _get(data, "updateParentalControls", "id") is not None
+
     async def set_today_limit(
         self, member: FamilyMember, target_seconds: int
     ) -> bool:

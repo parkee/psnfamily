@@ -70,6 +70,12 @@ midnight (full day = `0..1440`).
 - `set_on_limit_action(member_id, action)` — `NOTIFY_ONLY` / `FORCE_LOGOUT`
 - `update_todays_playtime(member_id, change)` / `add_time` / `remove_time` —
   grant or take back play-time for **today only** (signed ISO-8601 duration)
+- `set_parental_control(account_id, field, value)` — set one content/communication
+  control (`internetBrowser`, `vrApp`, `freeCommunication`, `contentControl`,
+  `ageLevel`, `gameContent`, `spendingLimit`)
+- `set_bulk_parental_controls(account_id, controls)` — apply several controls in
+  one request (the only path that can write `bluerayAgeContent` /
+  `discContentCountry` / `dvdContent`)
 - `get_supported_parental_controls()` and other read operations
 - `execute(operation, variables)` — any reverse-engineered operation by name
 

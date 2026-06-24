@@ -56,11 +56,16 @@ OPERATION_HASHES: dict[str, str] = {
 
 # --- Captured persisted-query hashes (override) -----------------------------
 # These write operations' hashes CANNOT be reproduced from the bundle gql
-# sources via the generateQueryId recipe that works for every other op: the
-# app's runtime document differs in a way that is not derivable statically
-# (verified -- no graphql v15/v16 print, sortAST, addTypename,
-# stripIgnoredCharacters, or Apollo InMemoryCache.transformDocument variation
-# reproduces them, and the hashes are not literals anywhere in the APK). They
+# sources. The recipe is NOT the problem -- it is provably correct
+# (sha256(graphql@15.print(sortAST(addTypename(doc)))) reproduces the live app's
+# hash for ohanaUpdatePlaytimeOnLimitReached byte-for-byte, plus every read
+# query). The DOCUMENT is: these mutations are assembled at runtime in Hermes JS
+# (operation name + return selection interpolated into a shared template), so the
+# exact document hashed never exists as a static string, the persisted-query
+# protocol never transmits it (only the hash), and it is not reconstructible --
+# with the recipe AND the target hash known, 76 candidate documents for
+# ohanaUpdateGameContent failed to reproduce dcf1ff40 (the hashes are also not
+# literals anywhere in the APK). They
 # were CAPTURED from genuine live app traffic (PS Family 26.4.0 running
 # unmodified on a rooted Android emulator, intercepted with a Frida SSL_write
 # hook) and each was verified present in Sony's gateway persisted-query
@@ -80,12 +85,29 @@ CAPTURED_HASHES: dict[str, str] = {
     # privacy
     'ohanaUpdatePrivacyRestrictionMode': '40ea22d951d009376595a5216f7d3c6bc27d6f8cda51f175cc78d66c7d87ccb1',
     'ohanaUpdateChildPrivacySettingsV2': 'fe3d1dce436eef15c15774637c8e69409f9088067ad2226ff5eb274155ed3b83',
-    # NOT yet captured (not triggerable from the parent app in the test account /
-    # region): ohanaUpdateBulkParentalControls, ohanaUpdateBluerayAgeContent,
-    # ohanaUpdateDiscContentCountry, ohanaUpdateDvdContent,
-    # ohanaUpdateGameException, ohanaDeleteAllowlistGameExceptionMutation.
-    # These retain their (incorrect) computed hash above and will raise
-    # "not whitelisted" until captured -- capture them the same way if needed.
+    # bulk update -- applies a whole ParentalControls preset in one request;
+    # variables: {accountId, parentalControls: {ageLevel, bluerayAgeContent,
+    #   contentControl, discContentCountry, dvdContent, freeCommunication,
+    #   gameContent, internetBrowser, spendingLimit, vrApp}} (all fields at once;
+    #   discContentCountry is an ISO country code, the rest are numeric strings).
+    'ohanaUpdateBulkParentalControls': 'd327d063c19a5673c05f069ea0068eb564fbd3236a6f43dbe02a970516a3f06c',
+    # TODO(capture): the 5 ops below still hold their (incorrect) computed hash
+    # from OPERATION_HASHES above and will raise PsnFamilyApiError ("not
+    # whitelisted") until captured the same way (rooted-emulator + Frida
+    # SSL_write; see research/REVERSE_ENGINEERING.md). They were not triggerable
+    # in the test account/region:
+    #   - ohanaUpdateBluerayAgeContent   (no Blu-ray/disc UI on a digital account)
+    #   - ohanaUpdateDiscContentCountry  (   ""   -- disc region picker absent)
+    #   - ohanaUpdateDvdContent          (   ""   -- DVD content picker absent)
+    #   - ohanaUpdateGameException       (needs a pending child *game* request to
+    #                                     approve; "ask for playtime" is a
+    #                                     different flow -> ohanaDeclinePlaytime)
+    #   - ohanaDeleteAllowlistGameExceptionMutation (remove an already-allowed
+    #                                     game; not cleanly reversible without a
+    #                                     fresh child request, so left uncaptured)
+    # NB: ohanaUpdateBulkParentalControls (captured above) CAN write
+    # bluerayAgeContent / discContentCountry / dvdContent as part of a full
+    # preset, so those three values are reachable today via set_bulk_parental_controls().
 }
 OPERATION_HASHES.update(CAPTURED_HASHES)
 
