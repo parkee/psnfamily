@@ -91,20 +91,24 @@ CAPTURED_HASHES: dict[str, str] = {
     #   gameContent, internetBrowser, spendingLimit, vrApp}} (all fields at once;
     #   discContentCountry is an ISO country code, the rest are numeric strings).
     'ohanaUpdateBulkParentalControls': 'd327d063c19a5673c05f069ea0068eb564fbd3236a6f43dbe02a970516a3f06c',
-    # TODO(capture): the 5 ops below still hold their (incorrect) computed hash
+    # game exceptions (approve / revoke an allow-listed restricted game) --
+    # variables: ohanaUpdateGameException{accountId, updateGameExceptionInput:
+    #   {titleId, exceptionType:"GAME_BOOT", entryType:"title",
+    #    requestAnswer:"APPROVE"|"DENY"}};
+    # ohanaDeleteAllowlistGameExceptionMutation{accountId,
+    #   deleteAllowlistGameExceptionInput:{entryType:"title",
+    #    exceptionType:"GAME_BOOT", titleId}}
+    'ohanaUpdateGameException': '1786ed5f49a907f82b334583f0de014451be2f1a9ee87108f55c028abe895c47',
+    'ohanaDeleteAllowlistGameExceptionMutation': '9f638e541ff08d8339b6e231dc93476792ad71917e97329a1ff33f5b3cdd4649',
+    # TODO(capture): the 3 ops below still hold their (incorrect) computed hash
     # from OPERATION_HASHES above and will raise PsnFamilyApiError ("not
     # whitelisted") until captured the same way (rooted-emulator + Frida
-    # SSL_write; see research/REVERSE_ENGINEERING.md). They were not triggerable
-    # in the test account/region:
-    #   - ohanaUpdateBluerayAgeContent   (no Blu-ray/disc UI on a digital account)
-    #   - ohanaUpdateDiscContentCountry  (   ""   -- disc region picker absent)
-    #   - ohanaUpdateDvdContent          (   ""   -- DVD content picker absent)
-    #   - ohanaUpdateGameException       (needs a pending child *game* request to
-    #                                     approve; "ask for playtime" is a
-    #                                     different flow -> ohanaDeclinePlaytime)
-    #   - ohanaDeleteAllowlistGameExceptionMutation (remove an already-allowed
-    #                                     game; not cleanly reversible without a
-    #                                     fresh child request, so left uncaptured)
+    # SSL_write; see research/REVERSE_ENGINEERING.md). Not triggerable from the
+    # parent app on a digital (no-disc) account -- there is no Blu-ray/disc/DVD
+    # content UI to drive them:
+    #   - ohanaUpdateBluerayAgeContent
+    #   - ohanaUpdateDiscContentCountry
+    #   - ohanaUpdateDvdContent
     # NB: ohanaUpdateBulkParentalControls (captured above) CAN write
     # bluerayAgeContent / discContentCountry / dvdContent as part of a full
     # preset, so those three values are reachable today via set_bulk_parental_controls().

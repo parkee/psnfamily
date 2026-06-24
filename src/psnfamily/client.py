@@ -401,6 +401,48 @@ class OhanaClient:
         )
         return _get(data, "updateParentalControls", "id") is not None
 
+    async def answer_game_exception(
+        self, account_id: str, title_id: str, approve: bool = True
+    ) -> bool:
+        """Approve or deny a child's request to play a restricted game.
+
+        ``title_id`` is the PSN title id (e.g. ``"PPSA07571"``) from the pending
+        request (see ``ohanaGetGameExceptionRequests``). ``approve=True`` allow-lists
+        the game; ``approve=False`` denies the request. Returns ``True`` on success.
+        """
+        data = await self.execute(
+            "ohanaUpdateGameException",
+            {
+                "accountId": account_id,
+                "updateGameExceptionInput": {
+                    "titleId": title_id,
+                    "exceptionType": "GAME_BOOT",
+                    "entryType": "title",
+                    "requestAnswer": "APPROVE" if approve else "DENY",
+                },
+            },
+        )
+        return _get(data, "updateGameException") is not None or not data.get("errors")
+
+    async def remove_game_exception(self, account_id: str, title_id: str) -> bool:
+        """Revoke an allow-listed game exception (remove a game from Allowed Games).
+
+        ``title_id`` is the PSN title id of an already-allowed game. Returns
+        ``True`` on success.
+        """
+        data = await self.execute(
+            "ohanaDeleteAllowlistGameExceptionMutation",
+            {
+                "accountId": account_id,
+                "deleteAllowlistGameExceptionInput": {
+                    "entryType": "title",
+                    "exceptionType": "GAME_BOOT",
+                    "titleId": title_id,
+                },
+            },
+        )
+        return not data.get("errors")
+
     async def set_today_limit(
         self, member: FamilyMember, target_seconds: int
     ) -> bool:

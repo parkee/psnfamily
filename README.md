@@ -76,6 +76,9 @@ midnight (full day = `0..1440`).
 - `set_bulk_parental_controls(account_id, controls)` — apply several controls in
   one request (the only path that can write `bluerayAgeContent` /
   `discContentCountry` / `dvdContent`)
+- `answer_game_exception(account_id, title_id, approve)` / `remove_game_exception(...)`
+  — approve/deny a child's request to play a restricted game, or revoke an
+  allow-listed game
 - `get_supported_parental_controls()` and other read operations
 - `execute(operation, variables)` — any reverse-engineered operation by name
 
