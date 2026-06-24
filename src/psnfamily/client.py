@@ -292,6 +292,21 @@ class OhanaClient:
         }
         return await self.set_playtime_schedule(family_member_id, [day] * days)
 
+    async def set_on_limit_action(
+        self, family_member_id: str, action: str
+    ) -> bool:
+        """Set what happens when a child reaches their play-time limit.
+
+        ``action`` is one of :data:`psnfamily.const.ON_LIMIT_ACTIONS`
+        (``"NONE"``, ``"NOTIFY_ONLY"``, ``"FORCE_LOGOUT"``). Returns the
+        ``success`` flag.
+        """
+        data = await self.execute(
+            "ohanaUpdatePlaytimeOnLimitReached",
+            {"memberId": family_member_id, "action": action},
+        )
+        return bool(_get(data, "updatePlaytimeOnLimitReached", "success"))
+
     async def update_todays_playtime(
         self, family_member_id: str, change: str
     ) -> bool:

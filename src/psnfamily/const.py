@@ -43,6 +43,11 @@ USER_AGENT: Final = "com.playstation.ohana.android/26.4.0 (Android) okhttp/4.12.
 # Refresh the access token this many seconds before its stated expiry.
 TOKEN_EXPIRY_MARGIN: Final = 60
 
+# --- Enums ------------------------------------------------------------------
+# Action taken when a child reaches their daily play-time limit
+# (PlaytimeOnLimitReached enum). Both members confirmed live.
+ON_LIMIT_ACTIONS: Final = ("NOTIFY_ONLY", "FORCE_LOGOUT")
+
 # --- Rate limiting ----------------------------------------------------------
 # PSNAWP self-imposes 1 request / 3 s and warns excessive use risks bans.
 MIN_REQUEST_INTERVAL: Final = 3.0

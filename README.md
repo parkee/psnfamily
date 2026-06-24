@@ -67,6 +67,7 @@ midnight (full day = `0..1440`).
 - `get_playtime(account_id)` — limits, usage, timezone, on-limit action
 - `set_daily_limit(member_id, seconds)` / `set_playtime_schedule(...)` — set
   play-time limits
+- `set_on_limit_action(member_id, action)` — `NOTIFY_ONLY` / `FORCE_LOGOUT`
 - `get_supported_parental_controls()` and other read operations
 - `execute(operation, variables)` — any reverse-engineered operation by name
 

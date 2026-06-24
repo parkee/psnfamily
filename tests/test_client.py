@@ -216,3 +216,41 @@ async def test_add_remove_time_quantize_and_sign():
     await client.remove_time("m", 25 * 60)  # -> "-PT30M"
     assert session.requests[0][2]["json"]["variables"]["playtimeDurationChange"] == "PT30M"
     assert session.requests[1][2]["json"]["variables"]["playtimeDurationChange"] == "-PT30M"
+
+
+async def test_set_daily_limit_builds_schedule():
+    session = FakeSession()
+    session.post_queue.append(
+        FakeResp(json_data={"data": {"updatePlaytimeSchedule": {"success": True}}})
+    )
+    client = _client_with(session)
+    ok = await client.set_daily_limit("m", 2 * 3600)
+    assert ok is True
+    body = session.requests[0][2]["json"]
+    assert body["operationName"] == "ohanaUpdatePlaytimeSchedule"
+    sched = body["variables"]["schedule"]
+    assert len(sched) == 7
+    assert sched[0] == {"maxPlaytimeDuration": "PT2H", "windowStart": 0, "windowEnd": 1440}
+
+
+async def test_set_daily_limit_unlimited():
+    session = FakeSession()
+    session.post_queue.append(
+        FakeResp(json_data={"data": {"updatePlaytimeSchedule": {"success": True}}})
+    )
+    client = _client_with(session)
+    await client.set_daily_limit("m", None)
+    assert session.requests[0][2]["json"]["variables"]["schedule"][0]["maxPlaytimeDuration"] == "P0D"
+
+
+async def test_set_on_limit_action():
+    session = FakeSession()
+    session.post_queue.append(
+        FakeResp(json_data={"data": {"updatePlaytimeOnLimitReached": {"success": True}}})
+    )
+    client = _client_with(session)
+    ok = await client.set_on_limit_action("m", "NOTIFY_ONLY")
+    assert ok is True
+    body = session.requests[0][2]["json"]
+    assert body["operationName"] == "ohanaUpdatePlaytimeOnLimitReached"
+    assert body["variables"] == {"memberId": "m", "action": "NOTIFY_ONLY"}
