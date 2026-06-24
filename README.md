@@ -68,12 +68,20 @@ midnight (full day = `0..1440`).
 - `set_daily_limit(member_id, seconds)` / `set_playtime_schedule(...)` — set
   play-time limits
 - `set_on_limit_action(member_id, action)` — `NOTIFY_ONLY` / `FORCE_LOGOUT`
+- `update_todays_playtime(member_id, change)` / `add_time` / `remove_time` —
+  grant or take back play-time for **today only** (signed ISO-8601 duration)
 - `get_supported_parental_controls()` and other read operations
 - `execute(operation, variables)` — any reverse-engineered operation by name
 
-> Some write operations the app contains (e.g. `updateTodaysPlaytimeLimit` and
-> the `updateParentalControls` family) are not in Sony's gateway allowlist for
-> the current app version and will raise `PsnFamilyApiError` ("not whitelisted").
+> **Persisted-query hashes.** The gateway only accepts Sony-allowlisted
+> persisted-query `sha256` hashes. Most are reproduced from the app bundle by the
+> documented recipe (`research/APQ_SOLVED.md`). A subset of write ops — including
+> `updateTodaysPlaytimeLimit` and several of the `updateParentalControls` family —
+> use a runtime document that cannot be reconstructed statically; their hashes
+> were **captured from genuine live app traffic** and verified against the gateway
+> safelist (see `psnfamily/hashes.py::CAPTURED_HASHES` and
+> `research/CAPTURE_FINDINGS.md`). Ops without a captured/derived hash will raise
+> `PsnFamilyApiError` ("not whitelisted") until captured.
 
 ## Auth client
 

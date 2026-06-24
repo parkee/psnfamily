@@ -54,4 +54,39 @@ OPERATION_HASHES: dict[str, str] = {
     'updateTodaysPlaytimeLimit': '47b018902e3f7da770a63f96ecb17d602710e9df4c8efb3778a985d48c089d5f',
 }
 
-__all__ = ['OPERATION_HASHES']
+# --- Captured persisted-query hashes (override) -----------------------------
+# These write operations' hashes CANNOT be reproduced from the bundle gql
+# sources via the generateQueryId recipe that works for every other op: the
+# app's runtime document differs in a way that is not derivable statically
+# (verified -- no graphql v15/v16 print, sortAST, addTypename,
+# stripIgnoredCharacters, or Apollo InMemoryCache.transformDocument variation
+# reproduces them, and the hashes are not literals anywhere in the APK). They
+# were CAPTURED from genuine live app traffic (PS Family 26.4.0 running
+# unmodified on a rooted Android emulator, intercepted with a Frida SSL_write
+# hook) and each was verified present in Sony's gateway persisted-query
+# safelist. Captured 2026-06-24.
+CAPTURED_HASHES: dict[str, str] = {
+    # play-time (add / remove time for today)
+    'updateTodaysPlaytimeLimit': '2b86536fc8f6836ad033649722208f5d1c4baa9c591096dd55fd35ff42681517',
+    # parental controls (updateParentalControls family) -- variables:
+    #   {accountId, parentalControls: {<field>: <value>}}
+    'ohanaUpdateInternetBrowser': '6e7cb7b1eb090c5cfaf2e83f4e45c7b08bddd4a85dee2877bd288577c67d2135',
+    'ohanaUpdateVrApp': '0fa4754eb6994f1d6dc868b620b2ecbb132a3b0c23491d5a468cd0f113c7ea22',
+    'ohanaUpdateFreeCommunication': '2fe2500a956ac99d13f69b4f5f450112f3ad158b3a4379e3a1762036431a2ef5',
+    'ohanaUpdateContentControl': '822b9dc947842cd7f7e2c8e22e54807336a8bc8521d1fea01bb162228e4e3592',
+    'ohanaUpdateAgeLevel': '0b0ae8d1da275a9af74d0bf576f3affcd02362bc14972b9b4fea9d4219567df1',
+    'ohanaUpdateGameContent': 'dcf1ff4051882170d280fd8805c0070108671f487072662a2dd3e6398634828f',
+    'ohanaUpdateSpendingLimit': 'f6b17484491945c40896adb2b6bb138b5415f2cf7454e6a25b6305269293c0ad',
+    # privacy
+    'ohanaUpdatePrivacyRestrictionMode': '40ea22d951d009376595a5216f7d3c6bc27d6f8cda51f175cc78d66c7d87ccb1',
+    'ohanaUpdateChildPrivacySettingsV2': 'fe3d1dce436eef15c15774637c8e69409f9088067ad2226ff5eb274155ed3b83',
+    # NOT yet captured (not triggerable from the parent app in the test account /
+    # region): ohanaUpdateBulkParentalControls, ohanaUpdateBluerayAgeContent,
+    # ohanaUpdateDiscContentCountry, ohanaUpdateDvdContent,
+    # ohanaUpdateGameException, ohanaDeleteAllowlistGameExceptionMutation.
+    # These retain their (incorrect) computed hash above and will raise
+    # "not whitelisted" until captured -- capture them the same way if needed.
+}
+OPERATION_HASHES.update(CAPTURED_HASHES)
+
+__all__ = ['CAPTURED_HASHES', 'OPERATION_HASHES']

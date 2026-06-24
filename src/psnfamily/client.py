@@ -314,11 +314,6 @@ class OhanaClient:
 
         ``change`` is e.g. ``"PT30M"`` to add 30 min or ``"-PT30M"`` to remove
         it (a one-day override). Returns the ``success`` flag.
-
-        NOTE: ``updateTodaysPlaytimeLimit`` is present in the app but its
-        persisted-query hash is not in the PSN gateway allowlist for app
-        version 26.4.0 (it raises :class:`PsnFamilyApiError` "not whitelisted").
-        Use :meth:`set_daily_limit` / :meth:`set_playtime_schedule` instead.
         """
         data = await self.execute(
             "updateTodaysPlaytimeLimit",
@@ -335,6 +330,41 @@ class OhanaClient:
         """Remove ``seconds`` of play-time from today's limit (15-min steps)."""
         delta = quantize_seconds(abs(seconds))
         return await self.update_todays_playtime(family_member_id, format_pt(-delta))
+
+    # Map a single ``UpdateParentalControlsInput`` field to the per-field op
+    # whose persisted-query hash is allow-listed (each field has its own op).
+    _PARENTAL_CONTROL_OPS = {
+        "internetBrowser": "ohanaUpdateInternetBrowser",
+        "vrApp": "ohanaUpdateVrApp",
+        "freeCommunication": "ohanaUpdateFreeCommunication",
+        "contentControl": "ohanaUpdateContentControl",
+        "ageLevel": "ohanaUpdateAgeLevel",
+        "gameContent": "ohanaUpdateGameContent",
+        "spendingLimit": "ohanaUpdateSpendingLimit",
+    }
+
+    async def set_parental_control(
+        self, account_id: str, field: str, value: object
+    ) -> bool:
+        """Set a single parental-control field on a child.
+
+        ``field`` is one of :data:`set_parental_control.fields` (the keys of
+        ``_PARENTAL_CONTROL_OPS``: ``internetBrowser``, ``vrApp``,
+        ``freeCommunication``, ``contentControl``, ``ageLevel``, ``gameContent``,
+        ``spendingLimit``); ``value`` is the field's value (e.g. ``"0"`` to allow
+        / ``"1"`` to restrict, a level/age string, or a spending amount).
+        Returns ``True`` on success.
+        """
+        op = self._PARENTAL_CONTROL_OPS.get(field)
+        if op is None:
+            raise ValueError(
+                f"unknown parental-control field {field!r}; expected one of "
+                f"{sorted(self._PARENTAL_CONTROL_OPS)}"
+            )
+        data = await self.execute(
+            op, {"accountId": account_id, "parentalControls": {field: value}}
+        )
+        return _get(data, "updateParentalControls", "id") is not None
 
     async def set_today_limit(
         self, member: FamilyMember, target_seconds: int
