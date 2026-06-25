@@ -83,14 +83,15 @@ midnight (full day = `0..1440`).
 - `execute(operation, variables)` — any reverse-engineered operation by name
 
 > **Persisted-query hashes.** The gateway only accepts Sony-allowlisted
-> persisted-query `sha256` hashes. Most are reproduced from the app bundle by the
-> documented recipe (`research/APQ_SOLVED.md`). A subset of write ops — including
-> `updateTodaysPlaytimeLimit` and several of the `updateParentalControls` family —
-> use a runtime document that cannot be reconstructed statically; their hashes
-> were **captured from genuine live app traffic** and verified against the gateway
-> safelist (see `psnfamily/hashes.py::CAPTURED_HASHES` and
-> `research/CAPTURE_FINDINGS.md`). Ops without a captured/derived hash will raise
-> `PsnFamilyApiError` ("not whitelisted") until captured.
+> persisted-query `sha256` hashes. **All** of them are reproduced offline from the
+> app's operation documents by one recipe:
+> `sha256(graphql@14.print(sortAST(addTypename(query))))`. The graphql **v14**
+> printer is the key detail — it keeps long argument lists single-line, while
+> v15/v16 reformat them, which is why an earlier v15 recipe matched short-argument
+> ops but not the `updateParentalControls` family / `updateTodaysPlaytimeLimit`.
+> The recipe was recovered by decompiling the app's persisted-query-id closure
+> from the Hermes bytecode and every hash was verified against the live gateway
+> safelist (see `research/CAPTURE_FINDINGS.md`). No live capture is required.
 
 ## Auth client
 
