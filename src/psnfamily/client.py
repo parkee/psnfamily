@@ -333,6 +333,9 @@ class OhanaClient:
 
     # Map a single ``UpdateParentalControlsInput`` field to the per-field op
     # whose persisted-query hash is allow-listed (each field has its own op).
+    # All hashes are computed offline (see hashes.py) and gateway-verified, so
+    # every field -- including the disc/Blu-ray/DVD ones -- is individually
+    # writable.
     _PARENTAL_CONTROL_OPS = {
         "internetBrowser": "ohanaUpdateInternetBrowser",
         "vrApp": "ohanaUpdateVrApp",
@@ -341,6 +344,10 @@ class OhanaClient:
         "ageLevel": "ohanaUpdateAgeLevel",
         "gameContent": "ohanaUpdateGameContent",
         "spendingLimit": "ohanaUpdateSpendingLimit",
+        "bluerayAgeContent": "ohanaUpdateBluerayAgeContent",
+        "discContentCountry": "ohanaUpdateDiscContentCountry",
+        "dvdContent": "ohanaUpdateDvdContent",
+        "privacyRestrictionMode": "ohanaUpdatePrivacyRestrictionMode",
     }
 
     async def set_parental_control(
@@ -348,12 +355,13 @@ class OhanaClient:
     ) -> bool:
         """Set a single parental-control field on a child.
 
-        ``field`` is one of :data:`set_parental_control.fields` (the keys of
-        ``_PARENTAL_CONTROL_OPS``: ``internetBrowser``, ``vrApp``,
-        ``freeCommunication``, ``contentControl``, ``ageLevel``, ``gameContent``,
-        ``spendingLimit``); ``value`` is the field's value (e.g. ``"0"`` to allow
-        / ``"1"`` to restrict, a level/age string, or a spending amount).
-        Returns ``True`` on success.
+        ``field`` is one of the keys of ``_PARENTAL_CONTROL_OPS``:
+        ``internetBrowser``, ``vrApp``, ``freeCommunication``, ``contentControl``,
+        ``ageLevel``, ``gameContent``, ``spendingLimit``, ``bluerayAgeContent``,
+        ``discContentCountry``, ``dvdContent``, ``privacyRestrictionMode``.
+        ``value`` is the field's value (e.g. ``"0"`` to allow / ``"1"`` to
+        restrict, a level/age string, an ISO country code for
+        ``discContentCountry``, or a spending amount). Returns ``True`` on success.
         """
         op = self._PARENTAL_CONTROL_OPS.get(field)
         if op is None:
@@ -384,9 +392,9 @@ class OhanaClient:
         ``freeCommunication``, ``gameContent``, ``internetBrowser``,
         ``spendingLimit``, ``vrApp``). Values are strings: most are numeric codes
         (e.g. ``"0"``/``"1"`` or a level), except ``discContentCountry`` which is
-        an ISO country code (e.g. ``"US"``). This is the only path that can write
-        ``bluerayAgeContent`` / ``discContentCountry`` / ``dvdContent`` (their
-        per-field ops are not yet allow-listed; see ``hashes.py``). Returns
+        an ISO country code (e.g. ``"US"``). This applies a whole preset in one
+        request; for a single field use :meth:`set_parental_control` (every field,
+        including the disc/Blu-ray/DVD ones, is individually writable). Returns
         ``True`` on success.
         """
         unknown = set(controls) - self._BULK_PARENTAL_CONTROL_FIELDS
@@ -474,11 +482,11 @@ class OhanaClient:
     ) -> dict[str, Any]:
         """Update a single parental-control field.
 
-        ``field`` is one of: ageLevel, gameContent, bluerayAgeContent,
-        dvdContent, discContentCountry, spendingLimit, freeCommunication,
-        internetBrowser, vrApp, contentControl, privacyRestrictionMode.
+        Thin wrapper over :meth:`set_parental_control` that returns the raw
+        ``updateParentalControls`` payload instead of a bool. ``field`` is one of
+        the keys of :data:`_PARENTAL_CONTROL_OPS`.
         """
-        operation = _PARENTAL_OPS.get(field)
+        operation = self._PARENTAL_CONTROL_OPS.get(field)
         if operation is None:
             raise ValueError(f"Unknown parental control field: {field}")
         data = await self.execute(
@@ -499,19 +507,6 @@ class OhanaClient:
         return self._handle_response("IntrospectionQuery", status, payload)
 
 
-_PARENTAL_OPS: dict[str, str] = {
-    "ageLevel": "ohanaUpdateAgeLevel",
-    "gameContent": "ohanaUpdateGameContent",
-    "bluerayAgeContent": "ohanaUpdateBluerayAgeContent",
-    "dvdContent": "ohanaUpdateDvdContent",
-    "discContentCountry": "ohanaUpdateDiscContentCountry",
-    "spendingLimit": "ohanaUpdateSpendingLimit",
-    "freeCommunication": "ohanaUpdateFreeCommunication",
-    "internetBrowser": "ohanaUpdateInternetBrowser",
-    "vrApp": "ohanaUpdateVrApp",
-    "contentControl": "ohanaUpdateContentControl",
-    "privacyRestrictionMode": "ohanaUpdatePrivacyRestrictionMode",
-}
 
 _INTROSPECTION_QUERY = """
 query IntrospectionQuery {
