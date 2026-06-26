@@ -279,6 +279,63 @@ async def test_set_daily_limit_builds_schedule():
     assert sched[0] == {"maxPlaytimeDuration": "PT2H", "windowStart": 0, "windowEnd": 1440}
 
 
+def _empty_schedule_resp():
+    """A get_playtime response with no weekly rows (7 default days)."""
+    return FakeResp(
+        json_data={
+            "data": {"familyMember": {"playtime": {"limitSettings": {"limits": []}}}}
+        }
+    )
+
+
+def _schedule_written(session):
+    """The schedule list from the recorded ohanaUpdatePlaytimeSchedule write."""
+    for r in session.requests:
+        body = r[2]["json"]
+        if body["operationName"] == "ohanaUpdatePlaytimeSchedule":
+            return body["variables"]["schedule"]
+    raise AssertionError("no schedule write recorded")
+
+
+async def test_set_schedule_day_writes_monday_first_and_preserves_rest():
+    member = FamilyMember.from_dict({"id": "m", "identity": {"accountId": "m"}})
+    session = FakeSession()
+    session.post_queue.append(_empty_schedule_resp())  # read current schedule
+    session.post_queue.append(
+        FakeResp(json_data={"data": {"updatePlaytimeSchedule": {"success": True}}})
+    )
+    client = _client_with(session)
+    ok = await client.set_schedule_day(
+        member, 0, duration_seconds=2 * 3600,
+        window_start_minutes=480, window_end_minutes=1320,
+    )
+    assert ok is True
+    sched = _schedule_written(session)
+    assert len(sched) == 7
+    # index 0 == Monday got the change ...
+    assert sched[0] == {
+        "maxPlaytimeDuration": "PT2H", "windowStart": 480, "windowEnd": 1320
+    }
+    # ... and the other days kept their defaults (blocked, full-day).
+    assert sched[1] == {
+        "maxPlaytimeDuration": "P0D", "windowStart": 0, "windowEnd": 1440
+    }
+
+
+async def test_set_all_days_limit_sets_every_day():
+    member = FamilyMember.from_dict({"id": "m", "identity": {"accountId": "m"}})
+    session = FakeSession()
+    session.post_queue.append(_empty_schedule_resp())
+    session.post_queue.append(
+        FakeResp(json_data={"data": {"updatePlaytimeSchedule": {"success": True}}})
+    )
+    client = _client_with(session)
+    await client.set_all_days_limit(member, 3600)
+    sched = _schedule_written(session)
+    assert len(sched) == 7
+    assert all(d["maxPlaytimeDuration"] == "PT1H" for d in sched)
+
+
 async def test_set_daily_limit_zero_blocks():
     # 0 / None maps to P0D, which BLOCKS play every day (not "unlimited").
     session = FakeSession()

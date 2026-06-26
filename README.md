@@ -60,10 +60,14 @@ asyncio.run(main())
 Play-time is governed by a recurring weekly schedule of
 `PlaytimeDaySetting { maxPlaytimeDuration, windowStart, windowEnd }`.
 `set_daily_limit` applies a uniform limit across the week (quantized to 15 min);
-`set_playtime_schedule` gives full per-day control. Durations are ISO-8601
-(`PT2H`; `P0D` = **blocked**, no play allowed — *not* unlimited). The
-playable-hours window is in minutes from local midnight (full day = `0..1440`).
-A child has no play-time by default until you grant it.
+`set_all_days_limit(member, seconds)` does the same but preserves each day's
+window; `set_schedule_day(member, weekday, …)` edits a single weekday
+(read-modify-write, leaving the rest intact); `set_playtime_schedule` writes the
+raw 7-entry list. Read the structured schedule via `Playtime.weekly_schedule`
+(7 `ScheduleDay`, Monday→Sunday). Durations are ISO-8601 (`PT2H`; `P0D` =
+**blocked**, no play allowed — *not* unlimited); the playable-hours window is in
+minutes from local midnight (full day = `0..1440`). A child has no play-time by
+default until you grant it.
 
 ## Capabilities
 
@@ -71,8 +75,10 @@ A child has no play-time by default until you grant it.
 - `get_family_members()` / `get_children()` — roster, roles, ids
 - `get_presences(account_ids)` — online status + now-playing game
 - `get_playtime(account_id)` — limits, usage, timezone, on-limit action
-- `set_daily_limit(member_id, seconds)` / `set_playtime_schedule(...)` — set
-  play-time limits
+- `set_daily_limit(member_id, seconds)` / `set_all_days_limit(member, seconds)` /
+  `set_schedule_day(member, weekday, …)` / `set_playtime_schedule(...)` — set the
+  recurring weekly schedule (uniform, per-day, or raw); `Playtime.weekly_schedule`
+  reads it back as 7 `ScheduleDay`
 - `set_on_limit_action(member_id, action)` — `NOTIFY_ONLY` / `FORCE_LOGOUT`
 - `set_today_limit(member, seconds)` — absolutely set **today only** (one-day
   override; `0` clears it, reverting to the schedule)

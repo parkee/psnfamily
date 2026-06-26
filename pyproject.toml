@@ -1,6 +1,6 @@
 [project]
 name = "psnfamily"
-version = "0.5.0"
+version = "0.6.0"
 description = "Python client for the PlayStation Family (PSN parental controls) API"
 readme = "README.md"
 authors = [

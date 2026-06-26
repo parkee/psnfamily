@@ -22,10 +22,11 @@ from .models import (
     Playtime,
     PlaytimeLimit,
     Presence,
+    ScheduleDay,
     Usage,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "DateTimeRange",
@@ -36,6 +37,7 @@ __all__ = [
     "Playtime",
     "PlaytimeLimit",
     "Presence",
+    "ScheduleDay",
     "PsnAuth",
     "PsnFamilyApiError",
     "PsnFamilyAuthError",

@@ -134,6 +134,22 @@ class PlaytimeLimit:
 
 
 @dataclass(slots=True)
+class ScheduleDay:
+    """One weekday of the recurring play-time schedule.
+
+    ``weekday`` is ``0`` = Monday … ``6`` = Sunday (the order PSN's
+    ``ohanaUpdatePlaytimeSchedule`` applies its 7-entry list, confirmed live).
+    ``duration_seconds`` is that day's allowance (``0`` = blocked). The playable
+    window is in **minutes from local midnight** (full day = ``0``–``1440``).
+    """
+
+    weekday: int
+    duration_seconds: int = 0
+    window_start_minutes: int = 0
+    window_end_minutes: int = 1440
+
+
+@dataclass(slots=True)
 class Usage:
     """Time actually played within a window."""
 
@@ -233,6 +249,53 @@ class Playtime:
             if limit.recurrence in ("WEEKLY", "DAILY"):
                 return limit.duration_seconds
         return None
+
+    @property
+    def weekly_schedule(self) -> list[ScheduleDay]:
+        """The recurring weekly schedule as 7 :class:`ScheduleDay` (Mon→Sun).
+
+        Each ``WEEKLY`` limit row is mapped to its weekday via the local date of
+        its ``nextDateTimeRange``, and its playable window is converted from
+        absolute UTC timestamps to minutes from local midnight. Weekdays without
+        a row default to blocked (``0``) with a full-day window.
+        """
+        days = {wd: ScheduleDay(weekday=wd) for wd in range(7)}
+        for limit in self.limits:
+            if limit.recurrence != "WEEKLY":
+                continue
+            weekday = self._local_weekday(limit.next_range.start)
+            if weekday is None:
+                continue
+            window = limit.windows[0] if limit.windows else None
+            start = self._local_minutes(window.start) if window else 0
+            end = self._local_minutes(window.end) if window else 1440
+            days[weekday] = ScheduleDay(
+                weekday=weekday,
+                duration_seconds=limit.duration_seconds,
+                window_start_minutes=start,
+                window_end_minutes=end,
+            )
+        return [days[wd] for wd in range(7)]
+
+    def _local_weekday(self, iso_utc: str) -> int | None:
+        """Weekday (0=Mon..6=Sun) of ``iso_utc`` in the child's timezone."""
+        dt = _parse_iso(iso_utc)
+        if dt is None:
+            return None
+        return (dt + timedelta(minutes=self.utc_offset_minutes)).weekday()
+
+    def _local_minutes(self, iso_utc: str) -> int:
+        """Convert a UTC timestamp to minutes from local midnight (0..1440).
+
+        A near-end-of-day time (``23:59:59.999``) rounds up to ``1440`` so a
+        full-day playable window round-trips cleanly.
+        """
+        dt = _parse_iso(iso_utc)
+        if dt is None:
+            return 0
+        local = dt + timedelta(minutes=self.utc_offset_minutes)
+        minutes = round(local.hour * 60 + local.minute + local.second / 60)
+        return max(0, min(1440, minutes))
 
     @property
     def used_today_seconds(self) -> int:

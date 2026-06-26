@@ -110,6 +110,75 @@ def test_playtime_p0d_is_blocked_not_unlimited():
     assert pt.remaining_seconds == 0  # clamped, never negative
 
 
+def test_weekly_schedule_maps_weekday_and_window():
+    from datetime import datetime
+
+    pt = Playtime.from_dict(
+        {
+            "timezone": {"utcOffsetInMinutes": 0},
+            "limitSettings": {
+                "limits": [
+                    {
+                        "duration": "PT2H",
+                        "recurrence": "WEEKLY",
+                        "nextDateTimeRange": {"start": "2026-06-24T00:00:00Z"},
+                        "windows": [
+                            {
+                                "dateTimeRange": {
+                                    "start": "2026-06-24T08:00:00Z",
+                                    "end": "2026-06-24T22:00:00Z",
+                                }
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+    )
+    sched = pt.weekly_schedule
+    assert len(sched) == 7
+    wd = datetime(2026, 6, 24).weekday()  # the row's local weekday
+    assert sched[wd].duration_seconds == 7200
+    assert sched[wd].window_start_minutes == 480  # 08:00
+    assert sched[wd].window_end_minutes == 1320  # 22:00
+    # days without a row default to blocked + full-day window
+    other = sched[(wd + 1) % 7]
+    assert other.duration_seconds == 0
+    assert other.window_start_minutes == 0
+    assert other.window_end_minutes == 1440
+
+
+def test_weekly_schedule_full_day_window_rounds_to_1440():
+    # 21:00 UTC -> 00:00 local (+180) and 20:59:59.999 UTC -> 23:59:59.999 local,
+    # which must normalise to a clean 0..1440 full-day window.
+    pt = Playtime.from_dict(
+        {
+            "timezone": {"utcOffsetInMinutes": 180},
+            "limitSettings": {
+                "limits": [
+                    {
+                        "duration": "P0D",
+                        "recurrence": "WEEKLY",
+                        "nextDateTimeRange": {"start": "2026-06-25T21:00:00.000Z"},
+                        "windows": [
+                            {
+                                "dateTimeRange": {
+                                    "start": "2026-06-25T21:00:00.000Z",
+                                    "end": "2026-06-26T20:59:59.999Z",
+                                }
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+    )
+    assert all(
+        d.window_start_minutes == 0 and d.window_end_minutes == 1440
+        for d in pt.weekly_schedule
+    )
+
+
 def test_playtime_recurring_ignores_today_override():
     # The recurring limit reports the WEEKLY value, not the ONCE override.
     pt = Playtime.from_dict(

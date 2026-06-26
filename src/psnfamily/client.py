@@ -28,7 +28,7 @@ from .exceptions import (
 )
 from .graphql import OPERATIONS
 from .hashes import OPERATION_HASHES
-from .models import FamilyMember, Playtime, Presence
+from .models import FamilyMember, Playtime, Presence, ScheduleDay
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +64,9 @@ class OhanaClient:
         self._auth = PsnAuth(self._ensure_sync_session(), tokens, timeout, oauth)
         self._req_lock = asyncio.Lock()
         self._last_request = 0.0
+        # Serializes read-modify-write edits of the weekly schedule so that
+        # concurrent single-day edits cannot clobber each other.
+        self._sched_lock = asyncio.Lock()
 
     def _ensure_sync_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -291,6 +294,58 @@ class OhanaClient:
             "windowEnd": window[1],
         }
         return await self.set_playtime_schedule(family_member_id, [day] * days)
+
+    async def set_schedule_day(
+        self,
+        member: FamilyMember,
+        weekday: int,
+        *,
+        duration_seconds: int | None = None,
+        window_start_minutes: int | None = None,
+        window_end_minutes: int | None = None,
+    ) -> bool:
+        """Change one weekday of the recurring schedule, preserving the rest.
+
+        ``weekday`` is ``0`` = Monday … ``6`` = Sunday. Any of the three fields
+        left ``None`` keep their current value. Because PSN replaces the whole
+        7-day schedule at once, this reads the current schedule, applies the
+        change, and writes all seven days back — serialized so concurrent
+        single-field edits don't clobber each other. ``duration_seconds`` is
+        quantized to 15 minutes (``0`` blocks that day); window values are
+        minutes from local midnight (``0``–``1440``).
+        """
+        async with self._sched_lock:
+            schedule = (
+                await self.get_playtime(member.identity.account_id)
+            ).weekly_schedule
+            day = schedule[weekday]
+            if duration_seconds is not None:
+                day.duration_seconds = quantize_seconds(max(0, duration_seconds))
+            if window_start_minutes is not None:
+                day.window_start_minutes = _clamp_minutes(window_start_minutes)
+            if window_end_minutes is not None:
+                day.window_end_minutes = _clamp_minutes(window_end_minutes)
+            return await self.set_playtime_schedule(
+                member.member_id, _schedule_payload(schedule)
+            )
+
+    async def set_all_days_limit(self, member: FamilyMember, seconds: int) -> bool:
+        """Set the same play-time limit on every weekday, keeping each window.
+
+        Like :meth:`set_daily_limit` but preserves the per-day playable windows
+        instead of resetting them to the full day. ``seconds`` is quantized to
+        15 minutes; ``0`` blocks play every day (``P0D``).
+        """
+        async with self._sched_lock:
+            schedule = (
+                await self.get_playtime(member.identity.account_id)
+            ).weekly_schedule
+            secs = quantize_seconds(max(0, seconds))
+            for day in schedule:
+                day.duration_seconds = secs
+            return await self.set_playtime_schedule(
+                member.member_id, _schedule_payload(schedule)
+            )
 
     async def set_on_limit_action(
         self, family_member_id: str, action: str
@@ -565,3 +620,26 @@ def _get(d: Any, *keys: str) -> Any:
             return None
         cur = cur.get(key)
     return cur
+
+
+def _clamp_minutes(value: int) -> int:
+    """Clamp a minutes-from-midnight value to the valid 0..1440 range."""
+    return max(0, min(1440, int(value)))
+
+
+def _schedule_payload(schedule: list[ScheduleDay]) -> list[dict[str, Any]]:
+    """Render a 7-day :class:`ScheduleDay` list as PlaytimeDaySetting dicts.
+
+    The list is Monday-first (index 0 = Monday), the order PSN's
+    ``ohanaUpdatePlaytimeSchedule`` applies the entries (confirmed live).
+    """
+    return [
+        {
+            "maxPlaytimeDuration": (
+                format_pt(day.duration_seconds) if day.duration_seconds else "P0D"
+            ),
+            "windowStart": day.window_start_minutes,
+            "windowEnd": day.window_end_minutes,
+        }
+        for day in schedule
+    ]
