@@ -10,7 +10,7 @@ from typing import Any
 import aiohttp
 
 from .auth import OAuthClient, PsnAuth, TokenSet
-from .codec import format_pt, parse_pt, quantize_seconds
+from .codec import format_pt, quantize_seconds
 from .const import (
     APOLLO_CLIENT_NAME,
     APOLLO_CLIENT_VERSION,
@@ -254,10 +254,10 @@ class OhanaClient:
         """Set a child's recurring weekly play-time schedule.
 
         ``schedule`` is a list of day settings, each a dict with:
-        ``maxPlaytimeDuration`` (ISO-8601 duration, ``"P0D"`` = no limit),
-        ``windowStart`` / ``windowEnd`` (playable-hours window, in minutes from
-        local midnight; full day = 0..1440). The list applies across the week.
-        Returns the ``success`` flag.
+        ``maxPlaytimeDuration`` (ISO-8601 duration; ``"P0D"`` = **blocked**, no
+        play allowed that day), ``windowStart`` / ``windowEnd`` (playable-hours
+        window, in minutes from local midnight; full day = 0..1440). The list
+        applies across the week. Returns the ``success`` flag.
         """
         data = await self.execute(
             "ohanaUpdatePlaytimeSchedule",
@@ -273,13 +273,13 @@ class OhanaClient:
         days: int = 7,
         window: tuple[int, int] = (0, 1440),
     ) -> bool:
-        """Set a uniform daily play-time limit (the same on every day).
+        """Set a uniform recurring daily play-time limit (same every day).
 
-        ``seconds=None`` or ``0`` removes the limit (``P0D``, unlimited).
-        Otherwise the limit is quantized to 15 minutes. This is the working
-        mechanism for "set the daily play-time" (the one-day override
-        ``updateTodaysPlaytimeLimit`` is not enabled server-side for this app
-        version). ``window`` is the playable-hours window in minutes.
+        ``seconds`` is the per-day allowance, quantized to 15 minutes.
+        ``seconds=0`` or ``None`` **blocks** play entirely (``P0D``) — it does
+        *not* mean unlimited. For a one-day-only change use
+        :meth:`set_today_limit`; ``window`` is the playable-hours window in
+        minutes from local midnight.
         """
         if not seconds:
             duration = "P0D"
@@ -310,10 +310,18 @@ class OhanaClient:
     async def update_todays_playtime(
         self, family_member_id: str, change: str
     ) -> bool:
-        """Apply a signed ISO-8601 duration delta to today's limit.
+        """Set today's one-day play-time override to ``change`` (absolute set).
 
-        ``change`` is e.g. ``"PT30M"`` to add 30 min or ``"-PT30M"`` to remove
-        it (a one-day override). Returns the ``success`` flag.
+        Despite the GraphQL field name, ``playtimeDurationChange`` **replaces**
+        today's limit outright — it is *not* added to the current value.
+        ``"PT30M"`` sets today to exactly 30 min. Any zero duration
+        (``"PT0M"`` / ``"PT0S"`` / ``"P0D"``) clears the override, so today
+        reverts to the recurring weekly schedule. Negative durations are
+        accepted by the server but produce a nonsensical negative limit, so the
+        higher-level helpers never send them. Returns the ``success`` flag.
+
+        Prefer :meth:`set_today_limit` (absolute) or :meth:`add_time` /
+        :meth:`remove_time` (relative) over calling this directly.
         """
         data = await self.execute(
             "updateTodaysPlaytimeLimit",
@@ -321,15 +329,34 @@ class OhanaClient:
         )
         return bool(_get(data, "updateTodaysPlaytimeLimit", "success"))
 
-    async def add_time(self, family_member_id: str, seconds: int) -> bool:
-        """Add ``seconds`` of play-time to today's limit (quantized to 15 min)."""
-        delta = quantize_seconds(abs(seconds))
-        return await self.update_todays_playtime(family_member_id, format_pt(delta))
+    async def add_time(self, member: FamilyMember, seconds: int) -> bool:
+        """Grant ``seconds`` *more* play-time today (relative; 15-min steps).
 
-    async def remove_time(self, family_member_id: str, seconds: int) -> bool:
-        """Remove ``seconds`` of play-time from today's limit (15-min steps)."""
-        delta = quantize_seconds(abs(seconds))
-        return await self.update_todays_playtime(family_member_id, format_pt(-delta))
+        The server op is an absolute set, so this reads today's current limit
+        and writes back ``current + seconds`` as a one-day override. A child who
+        is currently blocked (``P0D``) or unrestricted counts as a base of 0.
+        """
+        base = await self._today_limit_base(member)
+        return await self.set_today_limit(member, base + abs(seconds))
+
+    async def remove_time(self, member: FamilyMember, seconds: int) -> bool:
+        """Take back ``seconds`` of today's play-time (relative; 15-min steps).
+
+        Reads today's current limit and writes back ``max(0, current - seconds)``
+        as a one-day override. Reaching 0 clears the override, so today reverts
+        to the recurring weekly schedule.
+        """
+        base = await self._today_limit_base(member)
+        return await self.set_today_limit(member, max(0, base - abs(seconds)))
+
+    async def _today_limit_base(self, member: FamilyMember) -> int:
+        """Today's current effective limit in seconds (0 if unset/blocked).
+
+        Reads fresh from the server so relative adjustments compound correctly
+        even if cached data is stale.
+        """
+        playtime = await self.get_playtime(member.identity.account_id)
+        return playtime.today_limit_seconds or 0
 
     # Map a single ``UpdateParentalControlsInput`` field to the per-field op
     # whose persisted-query hash is allow-listed (each field has its own op).
@@ -451,21 +478,17 @@ class OhanaClient:
         )
         return not data.get("errors")
 
-    async def set_today_limit(
-        self, member: FamilyMember, target_seconds: int
-    ) -> bool:
-        """Set today's effective limit to ``target_seconds`` (computes delta).
+    async def set_today_limit(self, member: FamilyMember, seconds: int) -> bool:
+        """Set today's play-time limit to ``seconds`` (absolute one-day override).
 
-        Reads the current limit, computes the signed delta, quantizes to 15 min,
-        and applies it. No-ops (returns True) if already at target.
+        Replaces today's limit outright (PSN's ``updateTodaysPlaytimeLimit`` is
+        an absolute set). ``seconds <= 0`` clears the override, so today reverts
+        to the recurring weekly schedule. Quantized to 15 minutes. For a relative
+        nudge use :meth:`add_time` / :meth:`remove_time`.
         """
-        playtime = await self.get_playtime(member.identity.account_id)
-        current = playtime.today_limit_seconds or 0
-        target = quantize_seconds(max(0, target_seconds))
-        delta = target - current
-        if delta == 0:
-            return True
-        return await self.update_todays_playtime(member.member_id, format_pt(delta))
+        secs = quantize_seconds(max(0, seconds))
+        change = format_pt(secs) if secs else "PT0M"
+        return await self.update_todays_playtime(member.member_id, change)
 
     async def get_supported_parental_controls(
         self, country: str | None = None, date_of_birth: str | None = None

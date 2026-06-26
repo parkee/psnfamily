@@ -14,6 +14,7 @@ from psnfamily.exceptions import (
     PsnFamilyAuthError,
     PsnFamilyScopeError,
 )
+from psnfamily.models import FamilyMember
 
 
 class FakeResp:
@@ -207,15 +208,60 @@ async def test_update_todays_playtime_builds_variables():
     assert body["variables"] == {"familyMemberId": "member-1", "playtimeDurationChange": "PT30M"}
 
 
-async def test_add_remove_time_quantize_and_sign():
+def _playtime_resp(today_duration):
+    """A get_playtime response whose ONCE row has ``today_duration`` (or empty)."""
+    limits = (
+        [] if today_duration is None
+        else [{"duration": today_duration, "recurrence": "ONCE"}]
+    )
+    return FakeResp(
+        json_data={
+            "data": {"familyMember": {"playtime": {"limitSettings": {"limits": limits}}}}
+        }
+    )
+
+
+def _update_ok():
+    return FakeResp(
+        json_data={"data": {"updateTodaysPlaytimeLimit": {"success": True}}}
+    )
+
+
+async def test_add_remove_time_read_modify_write():
+    # PSN's update op is an absolute set, so add/remove must read today's
+    # current limit and write back current +/- the amount (never negative).
+    member = FamilyMember.from_dict({"id": "m", "identity": {"accountId": "m"}})
     session = FakeSession()
-    session.post_queue.append(FakeResp(json_data={"data": {"updateTodaysPlaytimeLimit": {"success": True}}}))
-    session.post_queue.append(FakeResp(json_data={"data": {"updateTodaysPlaytimeLimit": {"success": True}}}))
+    session.post_queue.append(_playtime_resp("PT15M"))  # read for add_time
+    session.post_queue.append(_update_ok())             # write for add_time
+    session.post_queue.append(_playtime_resp("PT15M"))  # read for remove_time
+    session.post_queue.append(_update_ok())             # write for remove_time
     client = _client_with(session)
-    await client.add_time("m", 25 * 60)     # -> quantize to 30m -> "PT30M"
-    await client.remove_time("m", 25 * 60)  # -> "-PT30M"
-    assert session.requests[0][2]["json"]["variables"]["playtimeDurationChange"] == "PT30M"
-    assert session.requests[1][2]["json"]["variables"]["playtimeDurationChange"] == "-PT30M"
+
+    await client.add_time(member, 15 * 60)     # 15 + 15 -> absolute "PT30M"
+    await client.remove_time(member, 15 * 60)  # 15 - 15 -> 0 -> clears ("PT0M")
+
+    writes = [
+        r[2]["json"]["variables"]["playtimeDurationChange"]
+        for r in session.requests
+        if r[2]["json"]["operationName"] == "updateTodaysPlaytimeLimit"
+    ]
+    assert writes == ["PT30M", "PT0M"]
+
+
+async def test_set_today_limit_absolute_and_clear():
+    member = FamilyMember.from_dict({"id": "m", "identity": {"accountId": "m"}})
+    session = FakeSession()
+    session.post_queue.append(_update_ok())
+    session.post_queue.append(_update_ok())
+    client = _client_with(session)
+    await client.set_today_limit(member, 45 * 60)  # -> "PT45M"
+    await client.set_today_limit(member, 0)        # -> "PT0M" (clear override)
+    writes = [
+        r[2]["json"]["variables"]["playtimeDurationChange"]
+        for r in session.requests
+    ]
+    assert writes == ["PT45M", "PT0M"]
 
 
 async def test_set_daily_limit_builds_schedule():
@@ -233,7 +279,8 @@ async def test_set_daily_limit_builds_schedule():
     assert sched[0] == {"maxPlaytimeDuration": "PT2H", "windowStart": 0, "windowEnd": 1440}
 
 
-async def test_set_daily_limit_unlimited():
+async def test_set_daily_limit_zero_blocks():
+    # 0 / None maps to P0D, which BLOCKS play every day (not "unlimited").
     session = FakeSession()
     session.post_queue.append(
         FakeResp(json_data={"data": {"updatePlaytimeSchedule": {"success": True}}})

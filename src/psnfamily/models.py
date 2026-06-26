@@ -109,9 +109,14 @@ class PlaytimeLimit:
         return parse_pt(self.duration)
 
     @property
-    def is_unlimited(self) -> bool:
-        """True if this row imposes no limit (``P0D`` is the 'no limit' value)."""
-        return self.duration in ("", "P0D") or parse_pt(self.duration) == 0
+    def is_blocked(self) -> bool:
+        """True if this row allows **no** play-time at all.
+
+        PSN encodes "no play allowed" as a zero duration (``P0D`` / ``PT0S``);
+        it is *not* an "unlimited" sentinel — a child with a ``P0D`` limit is
+        blocked, not unrestricted.
+        """
+        return parse_pt(self.duration) == 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PlaytimeLimit:
@@ -206,11 +211,28 @@ class Playtime:
 
     @property
     def today_limit_seconds(self) -> int | None:
-        """Today's effective limit in seconds, or None if unlimited/unset."""
+        """Today's effective limit in seconds (one-day override or schedule).
+
+        ``0`` means *blocked* — no play allowed today (PSN's ``P0D``). ``None``
+        means no limit row exists at all, i.e. play-time is unrestricted.
+        """
         limit = self.today_limit
-        if limit is None or limit.is_unlimited:
+        if limit is None:
             return None
-        return limit.duration_seconds
+        return limit.duration_seconds  # P0D -> 0 (blocked), never "unlimited"
+
+    @property
+    def recurring_limit_seconds(self) -> int | None:
+        """The recurring per-day limit in seconds (the weekly schedule value).
+
+        Ignores any one-day (``ONCE``) override and returns the first recurring
+        (``WEEKLY``/``DAILY``) row, which PSN returns soonest-day-first. ``0`` =
+        blocked every day (``P0D``); ``None`` = no recurring schedule configured.
+        """
+        for limit in self.limits:
+            if limit.recurrence in ("WEEKLY", "DAILY"):
+                return limit.duration_seconds
+        return None
 
     @property
     def used_today_seconds(self) -> int:
@@ -222,7 +244,8 @@ class Playtime:
     def remaining_seconds(self) -> int | None:
         """Seconds of play-time remaining today, clamped at 0.
 
-        None if no limit is configured (unlimited).
+        ``0`` when blocked (``P0D``) or the limit is used up. ``None`` only when
+        no limit is configured at all (play-time is unrestricted).
         """
         limit = self.today_limit_seconds
         if limit is None:

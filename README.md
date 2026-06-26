@@ -44,10 +44,15 @@ async def main():
                   "limit", pt.today_limit_seconds, "used", pt.used_today_seconds)
 
         kid = children[0]
-        # Set a 2-hour daily play-time limit:
+        # Set a 2-hour recurring daily play-time limit:
         await client.set_daily_limit(kid.member_id, 2 * 3600)
-        # Remove the limit (unlimited):
-        await client.set_daily_limit(kid.member_id, None)
+        # Block play entirely (P0D); 0 / None do the same — NOT "unlimited":
+        await client.set_daily_limit(kid.member_id, 0)
+
+        # Grant 30 more minutes today only (one-day override):
+        await client.add_time(kid, 30 * 60)
+        # ...or set today's limit absolutely (0 clears the override):
+        await client.set_today_limit(kid, 90 * 60)
 
 asyncio.run(main())
 ```
@@ -56,8 +61,9 @@ Play-time is governed by a recurring weekly schedule of
 `PlaytimeDaySetting { maxPlaytimeDuration, windowStart, windowEnd }`.
 `set_daily_limit` applies a uniform limit across the week (quantized to 15 min);
 `set_playtime_schedule` gives full per-day control. Durations are ISO-8601
-(`PT2H`, `P0D` = no limit); the playable-hours window is in minutes from local
-midnight (full day = `0..1440`).
+(`PT2H`; `P0D` = **blocked**, no play allowed — *not* unlimited). The
+playable-hours window is in minutes from local midnight (full day = `0..1440`).
+A child has no play-time by default until you grant it.
 
 ## Capabilities
 
@@ -68,8 +74,12 @@ midnight (full day = `0..1440`).
 - `set_daily_limit(member_id, seconds)` / `set_playtime_schedule(...)` — set
   play-time limits
 - `set_on_limit_action(member_id, action)` — `NOTIFY_ONLY` / `FORCE_LOGOUT`
-- `update_todays_playtime(member_id, change)` / `add_time` / `remove_time` —
-  grant or take back play-time for **today only** (signed ISO-8601 duration)
+- `set_today_limit(member, seconds)` — absolutely set **today only** (one-day
+  override; `0` clears it, reverting to the schedule)
+- `add_time(member, seconds)` / `remove_time(member, seconds)` — grant or take
+  back today's play-time relatively (read-modify-write; never goes negative)
+- `update_todays_playtime(member_id, change)` — low-level absolute set (the raw
+  `updateTodaysPlaytimeLimit` op)
 - `set_parental_control(account_id, field, value)` — set one content/communication
   control (`internetBrowser`, `vrApp`, `freeCommunication`, `contentControl`,
   `ageLevel`, `gameContent`, `spendingLimit`)

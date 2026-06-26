@@ -81,6 +81,49 @@ def test_playtime_no_limit_is_none():
     pt = Playtime.from_dict({"limitSettings": {"limits": []}})
     assert pt.today_limit_seconds is None
     assert pt.remaining_seconds is None
+    assert pt.recurring_limit_seconds is None
+
+
+def test_playtime_p0d_is_blocked_not_unlimited():
+    # P0D means 0 minutes allowed (blocked), NOT unlimited.
+    pt = Playtime.from_dict(
+        {
+            "limitSettings": {
+                "limits": [{"duration": "P0D", "recurrence": "WEEKLY"}]
+            },
+            "history": {
+                "usages": [
+                    {
+                        "duration": "PT10M",
+                        "dateTimeRange": {
+                            "start": "2026-06-23T00:00:00Z",
+                            "end": "2026-06-23T23:59:00Z",
+                        },
+                    }
+                ]
+            },
+        }
+    )
+    assert pt.today_limit.is_blocked is True
+    assert pt.today_limit_seconds == 0  # blocked, not None/unlimited
+    assert pt.recurring_limit_seconds == 0
+    assert pt.remaining_seconds == 0  # clamped, never negative
+
+
+def test_playtime_recurring_ignores_today_override():
+    # The recurring limit reports the WEEKLY value, not the ONCE override.
+    pt = Playtime.from_dict(
+        {
+            "limitSettings": {
+                "limits": [
+                    {"duration": "PT45M", "recurrence": "ONCE"},
+                    {"duration": "P0D", "recurrence": "WEEKLY"},
+                ]
+            }
+        }
+    )
+    assert pt.today_limit_seconds == 2700  # the override applies today
+    assert pt.recurring_limit_seconds == 0  # the schedule stays blocked
 
 
 def test_presence_from_dict():
